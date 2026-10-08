@@ -131,6 +131,18 @@ Work one step at a time; the user decides when to move to the next.
   and `greedy_round3.yaml` (15 configs, seeds 0-4): LunarLander variants (earlier ramp
   to p=1, more sticky greed, `sun_greedy_sticky_sched` = sticky hazard growing over
   training, eps floor 0.05, step p=1.0 diagnostic, DISCOVER rerun) + CartPole p grid.
+- FourRooms "failures" (2026-10-08) were TIMEOUTS, not crashes: Triton batch-hsw runs
+  SUN/DISCOVER at ~8.5 steps/s/seed (laptop ~77), seeds reached ~165k/200k. submitit
+  reports a timeout as FAILED (exit 137, "timed-out and not checkpointable"); check
+  the last progress line of the .out log before assuming a crash. Gridworld timeouts
+  are raised in submit_jobs_triton.py. Local full run: solves (test 1.0 by 90k),
+  peak RSS ~550 MB (Triton ~740 MB).
+- Round 3 results (10 seeds main configs): MountainCar SUN 10/10 solved vs eps 0/10,
+  DISCOVER 0/10. LunarLander: SUN sched p->1 by 150k 208 = eps_greedy 198, but SUN
+  p=1 (never goal-directed) also 206 -> no exploration gain there; eps floor 0.05
+  hurts SUN. CartPole: DISCOVER 383 > SUN 292 > eps 94; SUN reaches 500 but forgets.
+  Confound: eps_greedy decays eps over the whole run, SUN after warm-up ->
+  `eps_greedy_fast.yaml` / `dqn_fast_eps.yaml` is the fair control.
 - Next: analyse the pilot (`test` vs greedy value per env and mode), widen to all envs /
   more seeds for the promising modes, then `task_baseline.yaml` for the other methods,
   then other simple modifications (eps floor, score variants, rho), then harder envs.

@@ -1,0 +1,20 @@
+# Greediness study on hard-exploration gridworlds, where eps-greedy should fail.
+# Submit only after the four_rooms_stuck_hard failure on Triton is understood.
+# Run with --seeds 0-4. 3 environments x 7 = 21 configurations.
+
+global_sweep:
+  environment:
+    - four_rooms_stuck_hard
+    - three_rooms_wall_mini_nonuniform
+    - travel_field_small
+
+config_sweep:
+  - algorithm: [eps_greedy, eps_greedy_fast]
+  - algorithm: discover
+    agent.critic.explore_only: False
+  - algorithm: sun_greedy_step
+    agent.actor.greedy.value: 0.0
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.002, 0.01]
+  - algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0

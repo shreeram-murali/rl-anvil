@@ -1,0 +1,15 @@
+# @package _global_
+# eps-greedy Double DQN with the SAME eps schedule as the SUN actors
+# (sun_ratio_*.yaml): eps = 1 during warm-up, then 0.1 for the rest of training.
+# The control for eps_greedy.yaml, whose eps decays to 0.05 over the whole run and
+# so keeps acting mostly at random for much longer.
+
+agent:
+  actor:
+    id: EpsilonGreedy
+    eps:
+      id: LinearDecay
+      init_value: 1.0
+      end_value: 0.1
+      steps: ${experiment.warm_up}
+      constant_init_steps: ${experiment.warm_up}

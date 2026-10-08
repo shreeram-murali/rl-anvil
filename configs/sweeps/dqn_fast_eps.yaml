@@ -1,0 +1,7 @@
+# Fair-baseline control: eps-greedy DQN with SUN's eps schedule (eps_greedy_fast)
+# on the three environments of the greediness study. Run with --seeds 0-9.
+# 3 configurations.
+
+global_sweep:
+  environment: [mountain_car, cart_pole, lunar_lander]
+  algorithm: eps_greedy_fast

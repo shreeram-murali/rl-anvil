@@ -11,6 +11,7 @@ cluster-specific settings:
     - $SCRATCH is $WRKDIR (/scratch/work/<user>, 200 GB); $HOME is only 10 GB
     - the job activates the `sun_rl` conda env through the mamba module
     - GPUs are requested with a plain `gpu:1`, no partition
+    - CPU jobs are restricted to newer nodes (SLURM_CONSTRAINT)
 
 RUN THIS ON THE TRITON LOGIN NODE, from the repo root, with the env active:
 
@@ -36,6 +37,13 @@ CONDA_ENV = "sun_rl"
 
 base.SLURM_ACCOUNT = None  # submitit drops None parameters, so no --account
 base.SLURM_GPU = dict(slurm_gres="gpu:1")
+# Newer CPUs only: the default batch-hsw/bdw (Haswell/Broadwell) nodes are the
+# slowest, and SUN runs are single-threaded and CPU-bound. "a|b" = either feature.
+# Partitions with these features: batch-milan (milan), batch-csl/batch-pht (csl).
+# Set to None to allow any node (shorter queue, slower runs).
+SLURM_CONSTRAINT = "milan|csl"
+if SLURM_CONSTRAINT:
+    base.SLURM_EXTRA = dict(slurm_constraint=SLURM_CONSTRAINT)
 base.SLURM_SETUP = [
     "module load mamba",
     f"source activate {CONDA_ENV}",
@@ -43,6 +51,17 @@ base.SLURM_SETUP = [
     # keep `cd <repo>` and the thread/malloc exports of the base setup
     *base.SLURM_SETUP[base.SLURM_SETUP.index(f"cd {base.SCRIPT_DIR}"):],
 ]
+
+# Triton's batch-hsw (Haswell) nodes run SUN/DISCOVER at ~8.5 steps/s per seed
+# (measured 2026-10-05; ~9x slower than an M-series laptop). The base timeouts were
+# too short for the gridworlds: four_rooms_stuck_hard timed out at ~165k/200k steps.
+# These are sized as steps / 8.5 * 1.3 margin, divided by the x2.0 factor of the
+# sun_greedy_* algorithms in TIMEOUTS_ADJUST_ALGO.
+base.TIMEOUTS_ENV.update({
+    "four_rooms_stuck_hard": 260,             # 200k steps -> SUN 520 min
+    "three_rooms_wall_mini_nonuniform": 130,  # 100k steps -> SUN 260 min
+    "travel_field_small": 390,                # 300k steps -> SUN 780 min
+})
 
 # Queue limits (MAX_RUNNING_JOBS, MAX_SUBMIT_JOBS, MAX_ELEMENTS_PER_ARRAY) are
 # inherited. Check them against Triton before large sweeps:

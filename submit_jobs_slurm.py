@@ -214,6 +214,7 @@ SLURM_SETUP = [
 # Related: https://github.com/pytorch/pytorch/issues/165319
 
 SLURM_ACCOUNT = "project_2019619"
+SLURM_EXTRA = {}  # any other submitit parameters, e.g. slurm_constraint (see submit_jobs_triton.py)
 SLURM_GPU = dict(
     slurm_gres="gpu:v100:1",
     # slurm_gres=f"gpu:v100:{tasks_per_element}",
@@ -485,6 +486,7 @@ def submit_jobs(
             slurm_mem=f"{mem_mb}M",
             slurm_array_parallelism=MAX_RUNNING_JOBS,
             slurm_setup=SLURM_SETUP,
+            **SLURM_EXTRA,
         )
 
         # Tune this code depending on your cluster and how it handles GPU requests.
