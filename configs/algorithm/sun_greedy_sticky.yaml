@@ -1,0 +1,17 @@
+# @package _global_
+# SUN (sun_ratio_adaptive) that also learns the task Q-function. At every
+# non-random step it switches to the greedy task policy with probability
+# `greedy.value`, and then stays greedy until the end of the episode, so the
+# switch happens on average ~1/value steps into the episode.
+defaults:
+  - sun_ratio_adaptive
+  - _self_
+
+agent:
+  critic:
+    explore_only: False
+  actor:
+    greedy_mode: sticky
+    greedy:
+      id: Constant
+      value: 0.01

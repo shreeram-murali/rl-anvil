@@ -1,0 +1,30 @@
+# Round 2 of the greediness study, after greedy_pilot.yaml.
+# - mountain_car: rerun p=0 and p=0.1 (timed out in the pilot) and fill in the
+#   sticky range around the winner (0.002). eps_greedy, discover and the other
+#   SUN settings are already done there.
+# - cart_pole, pendulum_discrete, lunar_lander: references + p=0 + the three
+#   settings that solved mountain_car (sticky 0.002 / 0.01, sched to 1.0).
+# 4 + 3 x 6 = 22 configurations.
+
+config_sweep:
+  - environment: mountain_car
+    algorithm: sun_greedy_step
+    agent.actor.greedy.value: [0.0, 0.1]
+  - environment: mountain_car
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.001, 0.005]
+
+  - environment: [cart_pole, pendulum_discrete, lunar_lander]
+    algorithm: eps_greedy
+  - environment: [cart_pole, pendulum_discrete, lunar_lander]
+    algorithm: discover
+    agent.critic.explore_only: False
+  - environment: [cart_pole, pendulum_discrete, lunar_lander]
+    algorithm: sun_greedy_step
+    agent.actor.greedy.value: 0.0
+  - environment: [cart_pole, pendulum_discrete, lunar_lander]
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.002, 0.01]
+  - environment: [cart_pole, pendulum_discrete, lunar_lander]
+    algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0

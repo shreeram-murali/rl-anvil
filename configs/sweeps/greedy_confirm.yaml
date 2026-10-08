@@ -1,0 +1,29 @@
+# More seeds for the configurations that matter, after greedy_pilot/greedy_round2
+# (which ran seeds 0-2). Run with --seeds 3-9 to reach 10 seeds per configuration.
+# 6 + 6 + 3 = 15 configurations.
+
+config_sweep:
+  - environment: [mountain_car, cart_pole]
+    algorithm: eps_greedy
+  - environment: [mountain_car, cart_pole]
+    algorithm: discover
+    agent.critic.explore_only: False
+  - environment: [mountain_car, cart_pole]
+    algorithm: sun_greedy_step
+    agent.actor.greedy.value: 0.0
+  - environment: [mountain_car, cart_pole]
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.002, 0.01]
+  - environment: [mountain_car, cart_pole]
+    algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0
+
+  # LunarLander: the baseline and the two best SUN settings
+  - environment: lunar_lander
+    algorithm: eps_greedy
+  - environment: lunar_lander
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.01
+  - environment: lunar_lander
+    algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0

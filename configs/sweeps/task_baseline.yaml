@@ -1,0 +1,34 @@
+# Task-performance reference sweep: every method on every environment of gcrl.yaml,
+# but scored on the extrinsic task instead of exploration alone.
+#
+# Unlike gcrl.yaml, goal-conditioned agents here also learn the task Q-function
+# (`explore_only: False`) from the data their exploration collects, and the greedy
+# policy w.r.t. that Q-function is tested at every checkpoint (`test`, `test (γ)`),
+# with each environment's own `testing_episodes`.
+#
+# `explore_only` is set per algorithm because only the svf agent declares it
+# (QNetwork, used by eps_greedy and random, always learns the task Q).
+
+global_sweep:
+  environment:
+    - three_rooms_wall_mini_nonuniform
+    - four_rooms_stuck_hard
+    - travel_field_small
+    - acrobot
+    - mountain_car
+    - pendulum_discrete
+    - cart_pole
+    - lunar_lander
+
+config_sweep:
+  # Baselines on the plain task Q-network
+  - algorithm: [eps_greedy, random]
+
+  # Goal-conditioned explorers (SUN variants and baselines)
+  - algorithm:
+      - sun_ratio_step
+      - sun_ratio_episodic
+      - sun_ratio_adaptive
+      - discover
+      - adagoal
+    agent.critic.explore_only: False

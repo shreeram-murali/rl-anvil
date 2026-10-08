@@ -201,6 +201,12 @@ class GoalConditioned(EpsilonGreedy):
       to (re)select a goal. The candidate pool is drawn fresh each time
       from the replay buffer, and the current goal (if any) is included as
       a candidate so it can be kept.
+    - With `greedy`, a non-random step may instead act greedily w.r.t. the task
+      Q-function (needs `explore_only=False` on the critic to mean anything).
+      `greedy_mode="step"` decides this independently at every step;
+      `greedy_mode="sticky"` makes the first greedy step last for the rest of
+      the episode. A schedule (e.g. LinearDecay) as `greedy` varies the
+      probability over training.
     """
 
     def __init__(
@@ -210,6 +216,8 @@ class GoalConditioned(EpsilonGreedy):
         random_tail: bool,
         per_step_selection: bool,
         goal_value_check: bool,
+        greedy: DictConfig = None,
+        greedy_mode: str = "step",
         **kwargs,
     ):
         """
@@ -232,8 +240,18 @@ class GoalConditioned(EpsilonGreedy):
                 parameters — this drift-cancels any global shift in the critic
                 between selection and now. The goal is forgotten (and a new one
                 selected) if V(s_current, G) < V(s_sel, G).
+            greedy (DictConfig, None): configuration of the probability of
+                acting greedily w.r.t. the task Q-function at a (non-random)
+                step, instead of following the goal. None never acts greedily
+                (and draws no extra random numbers, so runs are unchanged),
+            greedy_mode (str, "step"): "step" draws the greedy decision at every
+                step; "sticky" turns the first greedy step into greedy behavior
+                until the end of the episode, so `greedy` is a per-step hazard.
         """
 
+        assert greedy_mode in ("step", "sticky"), f"unknown greedy_mode '{greedy_mode}'"
+        self._greedy = None if greedy is None else getattr(src.parameter, greedy.id)(**greedy)
+        self._greedy_mode = greedy_mode
         self.batch_size_goal = batch_size_goal
         self._random_tail = random_tail
         self._per_step_selection = per_step_selection
@@ -260,6 +278,11 @@ class GoalConditioned(EpsilonGreedy):
         self._self_goal_selections = source._self_goal_selections
         self._policy_steps = source._policy_steps
         self._random_tail_steps = source._random_tail_steps
+        if self._greedy is not None:
+            self._greedy.copy_from(source._greedy)
+        self._greedy_mode = source._greedy_mode
+        self._greedy_exploitation = source._greedy_exploitation
+        self._greedy_steps = source._greedy_steps
         self.goal = None if source.goal is None else source.goal.copy()
         self._goal_used_last_step = None
         if source.goal_selected_count is not None:
@@ -275,7 +298,15 @@ class GoalConditioned(EpsilonGreedy):
             "goal_selection_rate": np.nan if self._policy_steps == 0 else self._goal_selections / self._policy_steps,
             "avg_steps_to_goal": np.nan if self._goal_reached == 0 else self._steps_to_goal_sum / self._goal_reached,
             "random_tail_steps_%": np.nan if (self.t - self._policy_steps) == 0 else self._random_tail_steps / (self.t - self._policy_steps),
-        }
+        } | ({} if self._greedy is None else {
+            "greedy": self._greedy.value,
+            "greedy_steps_%": np.nan if self.t == 0 else self._greedy_steps / self.t,
+        })
+
+    def post_step(self, *args, **kwargs):
+        super().post_step(*args, **kwargs)
+        if self._greedy is not None:
+            self._greedy.step()
 
     def reset_goal(self):
         self.goal = None
@@ -285,6 +316,7 @@ class GoalConditioned(EpsilonGreedy):
     def reset_episode(self, seed=None, rng_generator=None, *args, **kwargs):
         self.reset_goal()
         self._random_exploration = False
+        self._greedy_exploitation = False
         self._pick_episode_critic(rng_generator)
 
     @property
@@ -328,6 +360,10 @@ class GoalConditioned(EpsilonGreedy):
         self._self_goal_selections = 0
         self._policy_steps = 0
         self._random_tail_steps = 0
+        self._greedy_exploitation = False
+        self._greedy_steps = 0
+        if self._greedy is not None:
+            self._greedy.reset()
         self._steps_to_goal_current = 0
         self._steps_to_goal_sum = 0
         if self.goal_selected_count is not None:
@@ -416,6 +452,19 @@ class GoalConditioned(EpsilonGreedy):
             # goal currently held (matches the pre-snapshot behavior).
             self._goal_used_last_step = self.goal
             return rng_generator.integers(self._critic.n_actions)
+
+        if self._greedy_exploitation or (
+            self._greedy is not None and rng_generator.random() < self._greedy.value
+        ):
+            # Same as the test policy. Like a random step, the action is not
+            # driven by the goal, which is kept (and not value-checked next step).
+            if self._greedy_mode == "sticky":
+                self._greedy_exploitation = True
+            self._greedy_steps += 1
+            self._previous_was_random = True
+            self._goal_used_last_step = self.goal
+            self._critic.eval()
+            return random_argmax(self._critic(obs), rng_generator, axis=-1)
 
         self._critic.eval()
         self._policy_steps += 1

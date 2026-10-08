@@ -1,0 +1,29 @@
+# Pilot sweep of SUN's greediness knob (see src/actor.py GoalConditioned), kept
+# small on purpose: 3 environments x 11 configurations = 33 configurations.
+# Environments: one hard gridworld and two classic-control tasks where
+# exploration matters. Scored on the task (`test`), so every method learns the
+# task Q-function.
+
+global_sweep:
+  environment:
+    - four_rooms_stuck_hard
+    - acrobot
+    - mountain_car
+
+config_sweep:
+  # References
+  - algorithm: eps_greedy
+  - algorithm: discover
+    agent.critic.explore_only: False
+
+  # Per-step probability of a greedy step (0.0 = SUN never greedy)
+  - algorithm: sun_greedy_step
+    agent.actor.greedy.value: [0.0, 0.1, 0.3, 0.6]
+
+  # Per-step hazard of switching to greedy for the rest of the episode
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.002, 0.01, 0.05]
+
+  # Per-step probability growing linearly from 0 to end_value over training
+  - algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: [0.5, 1.0]

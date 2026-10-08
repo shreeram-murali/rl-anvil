@@ -1,0 +1,49 @@
+# Round 3: new greediness settings, run with --seeds 0-4.
+#
+# LunarLander -- can SUN match eps_greedy (203)? In round 2, SUN sticky 0.01 led
+# early (89 vs -63 at 100k) but plateaued ~150, while eps_greedy and SUN
+# sched->1.0 were still climbing at 300k. So: exploit fully sooner, more greed,
+# a sticky hazard that grows over training, and DQN's eps floor (0.05 vs 0.1).
+# step p=1.0 is a diagnostic: SUN never follows goals, i.e. DQN inside SUN's agent.
+#
+# CartPole -- fill in the p grid around sticky 0.002 (best so far).
+# 10 + 5 = 15 configurations.
+
+config_sweep:
+  - environment: lunar_lander
+    algorithm: discover            # no data in round 2 (likely timeout)
+    agent.critic.explore_only: False
+  - environment: lunar_lander
+    algorithm: sun_greedy_step
+    agent.actor.greedy.value: 1.0
+  - environment: lunar_lander
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.02, 0.05]
+  # p reaches 1.0 at 150k / 80k steps instead of 290k
+  - environment: lunar_lander
+    algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0
+    agent.actor.greedy.constant_end_steps: [150_000, 220_000]
+  # sticky hazard growing from 0 to end_value over training
+  - environment: lunar_lander
+    algorithm: sun_greedy_sticky_sched
+    agent.actor.greedy.end_value: [0.02, 0.05]
+  # same as the two best settings, with eps_greedy's eps floor
+  - environment: lunar_lander
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.01
+    agent.actor.eps.end_value: 0.05
+  - environment: lunar_lander
+    algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0
+    agent.actor.eps.end_value: 0.05
+
+  - environment: cart_pole
+    algorithm: sun_greedy_step
+    agent.actor.greedy.value: [0.1, 0.3]
+  - environment: cart_pole
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.005, 0.02]
+  - environment: cart_pole
+    algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 0.5

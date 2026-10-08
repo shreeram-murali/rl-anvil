@@ -1,0 +1,16 @@
+# @package _global_
+# SUN (sun_ratio_adaptive) that also learns the task Q-function and, at every
+# non-random step, acts greedily on it with probability `greedy.value`
+# (independently at each step).
+defaults:
+  - sun_ratio_adaptive
+  - _self_
+
+agent:
+  critic:
+    explore_only: False
+  actor:
+    greedy_mode: step
+    greedy:
+      id: Constant
+      value: 0.1

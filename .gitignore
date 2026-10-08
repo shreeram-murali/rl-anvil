@@ -26,3 +26,4 @@ build/
 multirun.yaml
 !assets/*
 **/.DS_Store
+/notes

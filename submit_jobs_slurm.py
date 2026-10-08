@@ -214,6 +214,11 @@ SLURM_SETUP = [
 # Related: https://github.com/pytorch/pytorch/issues/165319
 
 SLURM_ACCOUNT = "project_2019619"
+SLURM_GPU = dict(
+    slurm_gres="gpu:v100:1",
+    # slurm_gres=f"gpu:v100:{tasks_per_element}",
+    slurm_partition="gpu",
+)
 SLURM_OUT = "slurm_out"
 HYDRA_OUT = "hydra_out"
 WANDB_OUT = "wandb_out"
@@ -257,9 +262,15 @@ TIMEOUTS_ENV = {
 # Algorithms not listed here use a factor of 1.
 TIMEOUTS_ADJUST_ALGO = {
     "random": 0.3,
-    "discover": 1.3,
+    "discover": 2.5,  # was 1.3; explore_only=False: mountain_car 365 of 390 min, lunar_lander no data at 800
     "adagoal": 1.3,
     "sun_ratio_step": 3.0,
+    # sun_ratio_adaptive + learning the task Q. Pilot (Triton): mountain_car 365-415 min
+    # of a 450 limit at p>=0.3, p<=0.1 saved no data (likely timeout); acrobot 230-290 min of 330.
+    "sun_greedy_step": 2.0,
+    "sun_greedy_sticky": 2.0,
+    "sun_greedy_sched": 2.0,
+    "sun_greedy_sticky_sched": 2.0,
 }
 
 # Memory: `mem_mb = BASE_MEM_MB + PER_SEED_MEM_MB[env] * len(seeds_in_chunk)`.
@@ -481,11 +492,7 @@ def submit_jobs(
         # you should not require a separate GPU per task.
         # If tasks share the same GPU, be sure your code supports Multi-Process Service
         if cuda:
-            executor.update_parameters(
-                slurm_gres="gpu:v100:1",
-                # slurm_gres=f"gpu:v100:{tasks_per_element}",
-                slurm_partition="gpu",
-            )
+            executor.update_parameters(**SLURM_GPU)
 
         # Job command, one per seed: a plain single run, no Hydra multirun, so no
         # 'multirun.yaml' and (configs/hydra/default.yaml sets output_subdir to
@@ -571,7 +578,7 @@ def submit_jobs(
         print(f"Skipped {skipped} configuration(s) with queued or running jobs.")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sweep", required=True,
         help="Sweep file in SWEEP_DIR (name without .yaml or a path). "
@@ -616,3 +623,7 @@ if __name__ == "__main__":
         extra=args.extra,
         skip_duplicates=args.skip_duplicates,
     )
+
+
+if __name__ == "__main__":
+    main()

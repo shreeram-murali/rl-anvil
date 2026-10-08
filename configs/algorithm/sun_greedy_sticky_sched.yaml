@@ -1,0 +1,14 @@
+# @package _global_
+# SUN (sun_ratio_adaptive) that also learns the task Q-function, with a sticky
+# switch to the greedy task policy whose per-step hazard grows linearly over
+# training: early episodes are almost all SUN, later ones switch to greedy
+# sooner and sooner (on average ~1/hazard steps into the episode).
+defaults:
+  - sun_greedy_sched
+  - _self_
+
+agent:
+  actor:
+    greedy_mode: sticky
+    greedy:
+      end_value: 0.05

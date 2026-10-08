@@ -1,0 +1,11 @@
+# Why does no method's greedy policy solve Acrobot (test = -500 everywhere in
+# greedy_pilot, even when SUN reaches the goal in most training episodes)?
+# Tune the task Q-learner on its own first: eps_greedy only, cheap (~25 min/run).
+# Defaults: tau=0.001 (soft target update per step), lrate=0.001.
+# 3 x 2 = 6 configurations.
+
+global_sweep:
+  environment: acrobot
+  algorithm: eps_greedy
+  agent.critic.tau: [0.001, 0.005, 0.02]
+  agent.critic.approximator.lrate: [0.001, 0.0003]
