@@ -1,0 +1,19 @@
+# (B) Wall-50x50: carry the goal's value back further per update. The goal is ~130
+# steps from the start (around the wall), and the task Q is trained on 8-step
+# TD(lambda) sequences with lambda=0.95. Here: 32-step sequences, lambda=0.99, for
+# the TASK Q only (the SVF has its own sequence_length_visit / lmbda_visit).
+# Measured locally: 1.2x slower for SUN (~35 h on Triton), 1.85x for DQN (~12 h);
+# the default limits (50 h / 25 h) cover both.
+# fast-eps DQN with the same change is the control. Run with --seeds 0-4
+# --seeds_per_chunk=1. 2 configurations.
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 500_000
+  agent.critic.sequence_length: 32
+  agent.critic.lmbda: 0.99
+
+config_sweep:
+  - algorithm: eps_greedy_fast
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.002

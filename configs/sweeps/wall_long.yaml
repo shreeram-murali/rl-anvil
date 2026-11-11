@@ -1,0 +1,18 @@
+# (A) Wall-50x50, twice the experience for the same number of updates: 1M steps
+# with one update every 2 environment steps (as many updates as the 500k runs).
+# Updates are ~90% of a SUN step here: measured locally 2.05x faster per step, so
+# ~28 h on Triton -- submit with --timeout_min 2700.
+# Sticky p brackets the 500k winner (0.002): with 500-step episodes, the agent
+# switches to greedy in ~39% / 63% / 86% of episodes for p = 0.001 / 0.002 / 0.004.
+# fast-eps DQN with the same change is the control. Run with --seeds 0-4
+# --seeds_per_chunk=1. 4 configurations.
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 1_000_000
+  experiment.update_frequency: 2
+
+config_sweep:
+  - algorithm: eps_greedy_fast
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.001, 0.002, 0.004]

@@ -49,22 +49,27 @@ SURFACE = "#fcfcfb"
 TEXT = "#0b0b0b"
 TEXT_2 = "#52514e"
 GRID = "#e4e3df"
-METHOD_COLORS = {  # categorical slots 1-4, fixed order
+METHOD_COLORS = {  # categorical slots 1-5, fixed order
     "SUN + greedy": "#2a78d6",
     "SUN (p=0)": "#eb6834",
     "DISCOVER": "#1baf7a",
     "eps-greedy DQN": "#eda100",
+    "eps-greedy DQN, fast ε": "#e87ba4",  # eps_greedy_fast: SUN's eps schedule
 }
 RAMP = ["#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6",
         "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"]
 REF_STYLE = {  # references in the p-sweep panels: neutral, told apart by dash
     "eps-greedy DQN": dict(color="#8a8984", ls=(0, (4, 2)), lw=1.4),
+    "eps-greedy DQN, fast ε": dict(color="#8a8984", ls=(0, (6, 1.5, 1, 1.5)), lw=1.4),
     "SUN (p=0)": dict(color="#3d3c39", ls=(0, (1, 1.5)), lw=1.6),
 }
 
 # Gymnasium's reward_threshold; Pendulum has none, -200 is our choice.
 SOLVED = {"MountainCar": -110, "CartPole": 475, "Acrobot": -100,
-          "LunarLander": 200, "Pendulum": -200}
+          "LunarLander": 200, "Pendulum": -200,
+          # gridworlds with reward 1 at the goal only
+          "FourRooms-Stuck-13x13-Hard": 1.0, "FourRooms-Stuck-13x13": 1.0,
+          "FourRooms-Loop-13x13": 1.0, "Straight-1x20": 1.0}
 
 MODES = [  # (key, column title)
     ("step", "per-step $p$"),
@@ -117,9 +122,15 @@ def describe(cfg):
 
     if aid == "EpsilonGreedy":
         if eps.get("id") == "LinearDecay":
+            # eps_greedy decays over the whole run; eps_greedy_fast only over warm-up
+            if eps.get("steps") == cfg["experiment"]["warm_up"]:
+                return ("eps-greedy DQN, fast ε", None, None, None, "eps-greedy DQN, fast ε")
             return ("eps-greedy DQN", None, None, None, "eps-greedy DQN")
         return None  # random / greedy actors
     if aid == "DISCOVER":
+        g = actor.get("greedy")
+        if g is not None and g.get("value", g.get("end_value")):
+            return None  # DISCOVER + greediness knob: shown by plot_compare.py --figure wall
         return ("DISCOVER", None, None, None, "DISCOVER") if not critic.get("explore_only", True) else None
     if aid != "SUN_Ratio" or critic.get("explore_only", True):
         return None  # pure explorers have no task policy to test
@@ -144,13 +155,35 @@ def describe(cfg):
     return None
 
 
-def load(folder, envs):
-    """runs[env][label] = dict(method, mode, p, key, steps, stats={name: (seeds, T)})."""
+# Learner settings that runs of the same method and p can differ in (wall_long.yaml,
+# wall_credit.yaml). load() keeps only runs matching these unless `where` overrides them,
+# so variants never get mixed with (or silently replace) the base runs.
+BASE_LEARNER = {"experiment.update_frequency": 1,
+                "agent.critic.sequence_length": 8,
+                "agent.critic.lmbda": 0.95}
+
+
+def get_key(cfg, dotted):
+    for k in dotted.split("."):
+        cfg = cfg.get(k) if isinstance(cfg, dict) else None
+    return cfg
+
+
+def load(folder, envs, training_steps=None, where=None):
+    """runs[env][label] = dict(method, mode, p, key, steps, stats={name: (seeds, T)}).
+
+    where: {dotted.config.key: value} that every run must match, on top of BASE_LEARNER.
+    """
     runs = defaultdict(dict)
+    where = {**BASE_LEARNER, **(where or {})}
     for cfg_path in sorted(glob.glob(os.path.join(folder, "*", "cfg.yaml"))):
         cfg = yaml.safe_load(open(cfg_path))
         env = env_name(cfg)
         if envs and env not in envs:
+            continue
+        if training_steps and cfg["experiment"]["training_steps"] != training_steps:
+            continue
+        if any(get_key(cfg, k) != v for k, v in where.items()):
             continue
         info = describe(cfg)
         if info is None:
@@ -223,8 +256,9 @@ def label_axes(ax, ylabel=None, xlabel=None):
         ax.set_xlabel(xlabel)
 
 
-def save(fig, folder, name, formats):
+def save(fig, folder, name, formats, suffix=""):
     os.makedirs(os.path.join(folder, "plots"), exist_ok=True)
+    name += suffix
     for fmt in formats:
         path = os.path.join(folder, "plots", f"{name}.{fmt}")
         fig.savefig(path, dpi=200, bbox_inches="tight")
@@ -264,15 +298,18 @@ def fig_methods(runs, envs, args):
     for ax in axes[1]:
         ax.set_ylim(lo, hi)
     handles = [Line2D([], [], color=c, lw=2) for c in METHOD_COLORS.values()]
-    fig.legend(handles, list(METHOD_COLORS), loc="lower center", ncol=4, frameon=False,
+    fig.legend(handles, list(METHOD_COLORS), loc="lower center", ncol=5, frameon=False,
                bbox_to_anchor=(0.5, -0.04))
     fig.tight_layout(rect=(0, 0.04, 1, 1))
-    save(fig, args.folder, "greedy_methods", args.formats)
+    save(fig, args.folder, "greedy_methods", args.formats, args.suffix)
 
 
 def fig_p_sweep(runs, envs, stat, name, ylabel, args):
     modes = [(k, t) for k, t in MODES
              if any(e["mode"] == k for env in envs for e in runs[env].values())]
+    if not modes:
+        print(f"skipping {name}: no SUN + greedy runs for {envs} yet")
+        return
     fig, axes = plt.subplots(len(envs), len(modes), figsize=(3.0 * len(modes), 2.5 * len(envs) + 0.6),
                              squeeze=False, sharey="row" if stat == "test" else "all")
     for i, env in enumerate(envs):
@@ -313,23 +350,37 @@ def fig_p_sweep(runs, envs, stat, name, ylabel, args):
     fig.legend(handles, list(REF_STYLE), loc="lower center", ncol=2, frameon=False,
                bbox_to_anchor=(0.5, -0.01), title="references (gray); lighter → darker blue = greedier",
                title_fontsize=8)
-    fig.tight_layout(rect=(0, 0.05, 1, 1))
-    save(fig, args.folder, name, args.formats)
+    # keep ~0.9 in at the bottom for the legend, whatever the figure height
+    fig.tight_layout(rect=(0, 0.9 / fig.get_figheight(), 1, 1))
+    save(fig, args.folder, name, args.formats, args.suffix)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-f", "--folder", required=True, help="Data directory, e.g. data_greedy_pilot.")
     parser.add_argument("--envs", nargs="+", default=["MountainCar", "CartPole", "LunarLander"],
+                        # "all" = every environment in the folder
                         help="Environment names (Gymnasium id without version), in column order.")
     parser.add_argument("--entropy", default="s_h", help="Entropy statistic: s_h (states) or sa_h.")
     parser.add_argument("--smooth", type=int, default=5, help="Moving-average window in checkpoints.")
     parser.add_argument("--min_seeds", type=int, default=3,
                         help="Seeds a SUN + greedy configuration needs to be picked as 'best'.")
     parser.add_argument("--formats", nargs="+", default=["png", "pdf"])
+    parser.add_argument("--training_steps", type=int, default=None,
+                        help="Keep only runs of this length (a folder can hold e.g. 500k and 1M runs).")
+    parser.add_argument("--suffix", default="",
+                        help="Appended to the file names, e.g. _gridworlds, so runs don't overwrite each other.")
+    parser.add_argument("--where", nargs="+", default=[], metavar="KEY=VALUE",
+                        help="Keep only runs with these config values, e.g. experiment.update_frequency=2 "
+                             "or agent.critic.sequence_length=32 agent.critic.lmbda=0.99. Runs with "
+                             "non-default learner settings are skipped unless selected here.")
     args = parser.parse_args()
+    where = {k: yaml.safe_load(v) for k, v in (w.split("=", 1) for w in args.where)}
 
-    runs = load(args.folder, args.envs)
+    if args.envs == ["all"]:
+        args.envs = sorted({env_name(yaml.safe_load(open(c)))
+                            for c in glob.glob(os.path.join(args.folder, "*", "cfg.yaml"))})
+    runs = load(args.folder, args.envs, args.training_steps, where)
     envs = [e for e in args.envs if runs.get(e)]
     missing = sorted(set(args.envs) - set(envs))
     if missing:

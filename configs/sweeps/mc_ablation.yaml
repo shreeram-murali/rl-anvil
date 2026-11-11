@@ -1,0 +1,24 @@
+# (2) MountainCar, the task only SUN solves: the baselines never run on the task
+# (AdaGoal, random) and an ablation of SUN's goal score, all learning the task Q.
+#   sun_ratio_adaptive         V / n           (SUN, the paper's score)
+#   sun_novelty_adaptive       1 / n           (novelty only)
+#   sun_reachability_adaptive  V               (reachability only)
+# The three differ ONLY in the actor's score (same selection timing, rho, eps).
+# sun_ucb_adaptive (V + sqrt(log t / n)) is left out: candidate counts are clipped at
+# 1e-3, so whenever any candidate (s, a) is untried both UCB and the ratio pick the
+# most reachable untried one -- a local run matched SUN's ratio score to every digit
+# for 15k steps on MountainCar.
+# Run with --seeds 0-9 (same seeds as the existing MountainCar runs).
+# 5 configurations.
+
+global_sweep:
+  environment: mountain_car
+
+config_sweep:
+  - algorithm: random
+  - algorithm:
+      - sun_ratio_adaptive
+      - sun_novelty_adaptive
+      - sun_reachability_adaptive
+      - adagoal
+    agent.critic.explore_only: False

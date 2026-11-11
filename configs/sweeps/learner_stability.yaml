@@ -1,0 +1,62 @@
+# (3) "Finds it but doesn't keep it": on CartPole and TravelField-28x28, SUN reaches
+# high test returns early and then loses them -- a task-learner problem (Double DQN,
+# Polyak target updates), not an exploration one. Two stabilisers, crossed:
+#   agent.critic.tau      0.001 (default) vs 0.0002 (5x slower target network)
+#   agent.critic.lr       constant 1.0 (default) vs linear decay 1.0 -> 0.1
+#                         (a multiplier on the task Q's step size; SVF untouched)
+# for SUN (each env's best greedy setting) AND fast-eps DQN, so a gain can be told
+# apart from simply having a better learner. TravelField runs 500k steps (the
+# 1M-step runs took ~45 h). Run with --seeds 0-4.
+# 2 tau x 2 lr x 2 methods x 2 envs = 16 configurations.
+
+global_sweep:
+  agent.critic.tau: [0.001, 0.0002]
+
+config_sweep:
+  # CartPole, 200k steps
+  - environment: cart_pole
+    algorithm: eps_greedy_fast
+  - environment: cart_pole
+    algorithm: eps_greedy_fast
+    agent.critic.lr.id: LinearDecay
+    agent.critic.lr.init_value: 1.0
+    agent.critic.lr.end_value: 0.1
+    agent.critic.lr.steps: 200_000
+    agent.critic.lr.constant_init_steps: 10_000
+  - environment: cart_pole
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.002
+  - environment: cart_pole
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.002
+    agent.critic.lr.id: LinearDecay
+    agent.critic.lr.init_value: 1.0
+    agent.critic.lr.end_value: 0.1
+    agent.critic.lr.steps: 200_000
+    agent.critic.lr.constant_init_steps: 10_000
+
+  # TravelField-28x28, 500k steps
+  - environment: travel_field
+    experiment.training_steps: 500_000
+    algorithm: eps_greedy_fast
+  - environment: travel_field
+    experiment.training_steps: 500_000
+    algorithm: eps_greedy_fast
+    agent.critic.lr.id: LinearDecay
+    agent.critic.lr.init_value: 1.0
+    agent.critic.lr.end_value: 0.1
+    agent.critic.lr.steps: 500_000
+    agent.critic.lr.constant_init_steps: 10_000
+  - environment: travel_field
+    experiment.training_steps: 500_000
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.01
+  - environment: travel_field
+    experiment.training_steps: 500_000
+    algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.01
+    agent.critic.lr.id: LinearDecay
+    agent.critic.lr.init_value: 1.0
+    agent.critic.lr.end_value: 0.1
+    agent.critic.lr.steps: 500_000
+    agent.critic.lr.constant_init_steps: 10_000

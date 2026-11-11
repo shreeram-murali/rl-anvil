@@ -1,0 +1,22 @@
+# Wall-50x50: does DISCOVER learn the task with the same greediness knob as SUN's best
+# setting (sticky p=0.002)? Plain DISCOVER scores 0 at 500k (85% coverage).
+#
+# 800k steps, not 1M: DISCOVER runs ~5% slower than SUN on Triton (500k: 29-31 h vs
+# 27-29 h), so 1M would need ~62-66 h, too close to the 70.8 h limit given that some
+# nodes ran 17% slow in the last batch (and a timed-out run saves nothing). 800k is an
+# exact prefix of a 1M run (the buffer never fills, eps/p schedules don't depend on the
+# run length), so it compares directly with SUN's 1M curve, where every seed had the
+# goal by 560k. Expect ~52 h; submit with --timeout_min 4248 (the maximum).
+#   python submit_jobs_triton.py --sweep=wall_discover --data_dir=data_explore_hard \
+#       --seeds 0-4 --seeds_per_chunk=1 --timeout_min 4248
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 800_000
+
+config_sweep:
+  - algorithm: discover
+    agent.critic.explore_only: False
+    agent.actor.greedy_mode: sticky
+    agent.actor.greedy.id: Constant
+    agent.actor.greedy.value: 0.002

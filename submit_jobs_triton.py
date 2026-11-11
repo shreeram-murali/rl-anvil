@@ -61,6 +61,43 @@ base.TIMEOUTS_ENV.update({
     "four_rooms_stuck_hard": 260,             # 200k steps -> SUN 520 min
     "three_rooms_wall_mini_nonuniform": 130,  # 100k steps -> SUN 260 min
     "travel_field_small": 390,                # 300k steps -> SUN 780 min
+    # explore_hard.yaml (2026-10-09). Speeds estimated from local probes scaled by
+    # the measured Triton/laptop ratio: SUN ~14 steps/s on the small gridworlds,
+    # ~7 on travel_field and ~9.5 on wall_large (DISCOVER ~9.4 / ~7.5).
+    "river_swim": 45,                         # 20k steps
+    "straight": 45,                           # 30k steps
+    "four_rooms_stuck": 260,                  # 200k steps -> SUN 520 min
+    "four_rooms_loop": 260,                   # 200k steps
+    "travel_field": 1550,                     # 1M steps -> SUN 3100 min (~52 h)
+    # wall_large: the 1M-step SUN/DISCOVER runs did not finish in 40/50 h. wall_500k.yaml
+    # runs 500k steps; 1500 -> SUN 3000 min, DISCOVER 3750 min, enough down to ~2.8 steps/s.
+    "wall_large": 1500,
+})
+# Goal-conditioned algorithms that learn the task Q (explore_only=False) run at the
+# speed of the sun_greedy_* ones (x2.0 in submit_jobs_slurm.py); the base factors
+# (1 / 1.3) were sized for pure exploration. Used by mc_ablation.yaml.
+base.TIMEOUTS_ADJUST_ALGO.update({
+    "sun_ratio_adaptive": 2.0,
+    "sun_novelty_adaptive": 2.0,
+    "sun_reachability_adaptive": 2.0,
+    "sun_ucb_adaptive": 2.0,                  # (not in mc_ablation: identical to the ratio there)
+    "adagoal": 2.5,                           # ensemble, like discover
+})
+
+# Per-seed memory (MB) for the same environments = replay memory + ~650 MB of
+# Python/torch (FourRooms-Hard on Triton: 740 MB peak with a 106 MB buffer) + 10%.
+# The replay memory is allocated in full at start-up and stores gridworld observations
+# one-hot, so it is (training_steps x n_states) values: exact sizes below are from the
+# array shapes, for SUN/DISCOVER (which also store each step's goal; DQN needs ~2/3).
+# Do NOT size this from macOS RSS: macOS compresses the still-zero pages and reported
+# ~2 GB for wall_large, whose jobs were then OOM-killed on Triton at 3.1 GB/seed.
+base.PER_SEED_MEM_MB.update({
+    "river_swim": 800,                        # buffer < 1 MB
+    "straight": 800,                          # buffer < 1 MB
+    "four_rooms_stuck": 900,                  # buffer 106 MB
+    "four_rooms_loop": 900,                   # buffer 106 MB
+    "travel_field": 3300,                     # buffer 2.3 GB (784 states x 1M steps)
+    "wall_large": 8700,                       # buffer 7.2 GB (2500 states x 1M steps)
 })
 
 # Queue limits (MAX_RUNNING_JOBS, MAX_SUBMIT_JOBS, MAX_ELEMENTS_PER_ARRAY) are
@@ -70,4 +107,22 @@ base.TIMEOUTS_ENV.update({
 
 
 if __name__ == "__main__":
+    # Extra Triton-only option: one wall-clock limit for every job of this submission,
+    # replacing TIMEOUTS_ENV x TIMEOUTS_ADJUST_ALGO (still capped at base.MAX_TIMEOUT).
+    # For sweeps whose length differs from what the per-env tables assume, e.g.
+    #   python submit_jobs_triton.py --sweep=wall_1m ... --timeout_min 4240
+    import argparse
+    import sys
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--timeout_min", type=int, default=None)
+    # Node features for this submission only, replacing SLURM_CONSTRAINT, e.g. "milan"
+    pre.add_argument("--constraint", default=None)
+    extra, sys.argv[1:] = pre.parse_known_args(sys.argv[1:])
+    if extra.constraint is not None:
+        base.SLURM_EXTRA = dict(slurm_constraint=extra.constraint)
+        print(f"Node constraint: {extra.constraint} (--constraint)")
+    if extra.timeout_min is not None:
+        base.TIMEOUTS_ENV = {env: extra.timeout_min for env in base.TIMEOUTS_ENV}
+        base.TIMEOUTS_ADJUST_ALGO = {}
+        print(f"Every job gets {min(extra.timeout_min, base.MAX_TIMEOUT)} min (--timeout_min)")
     base.main()

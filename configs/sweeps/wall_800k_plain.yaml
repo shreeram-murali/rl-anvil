@@ -1,0 +1,17 @@
+# Wall-50x50 at 800k steps without the greediness knob: plain DISCOVER and plain SUN
+# (p=0), both learning the task Q. Puts every method at the same length as
+# wall_discover.yaml (DISCOVER + sticky 0.002); at 500k both score 0.
+# Triton at 500k took 27-29 h (SUN) / 29-31 h (DISCOVER) -> expect ~45 / ~50 h here;
+# the per-env limits (50 h for sun_greedy_*) are too tight, so:
+#   python submit_jobs_triton.py --sweep=wall_800k_plain --data_dir=data_explore_hard \
+#       --seeds 0-4 --seeds_per_chunk=1 --timeout_min 4248
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 800_000
+
+config_sweep:
+  - algorithm: discover
+    agent.critic.explore_only: False
+  - algorithm: sun_greedy_step
+    agent.actor.greedy.value: 0.0

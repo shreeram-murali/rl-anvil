@@ -1,0 +1,12 @@
+# (D) Wall-50x50, the full 1M steps with an update every step (~58 h at the measured
+# ~4.8 steps/s; submit with --timeout_min 4240, just under Triton's 72 h cap).
+# Exactly the overrides of the explore_hard.yaml run that timed out, so it reuses
+# that config_id. DQN at 1M steps already exists (0/5 for both variants).
+# Run with --seeds 0-4 --seeds_per_chunk=1. 1 configuration.
+
+global_sweep:
+  environment: wall_large
+
+config_sweep:
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.002

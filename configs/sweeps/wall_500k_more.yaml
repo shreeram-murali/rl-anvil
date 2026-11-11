@@ -1,0 +1,12 @@
+# (C) More seeds for the best Wall-50x50 setting at 500k steps (sticky p=0.002).
+# Exactly the overrides of wall_500k.yaml, so the config_id -- and the data folder --
+# are the same and the new seeds join the existing ones. Run with --seeds 5-9
+# --seeds_per_chunk=1. 1 configuration.
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 500_000
+
+config_sweep:
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: 0.002

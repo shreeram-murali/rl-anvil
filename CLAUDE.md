@@ -143,6 +143,80 @@ Work one step at a time; the user decides when to move to the next.
   hurts SUN. CartPole: DISCOVER 383 > SUN 292 > eps 94; SUN reaches 500 but forgets.
   Confound: eps_greedy decays eps over the whole run, SUN after warm-up ->
   `eps_greedy_fast.yaml` / `dqn_fast_eps.yaml` is the fair control.
+- 2026-10-09 results: fast-eps DQN also fails MountainCar (0/10) -> SUN's win there is
+  real. CartPole fast-eps 235 ~ SUN 243-292; LunarLander all ~190-210 -> SUN's earlier
+  edge there was the eps schedule. Gridworlds (FourRooms-Hard, ThreeRooms-Wall,
+  TravelField-12x12): fast-eps DQN solves all -> too easy. Triton with
+  constraint milan|csl: SUN ~13-14 steps/s on gridworlds (vs ~8.5 on hsw).
+- Weekend batch 2026-10-09: `explore_hard.yaml` (42 configs, 5 seeds) on river_swim,
+  straight, four_rooms_stuck, four_rooms_loop, travel_field, wall_large -- every
+  method everywhere, to find more envs where fast-eps DQN fails. Fixed env ids
+  (RiverSwim-1x6, Straight-1x20). taxi is unusable for SUN/DISCOVER (no binned counter
+  -> crash on goal reached). Timeouts/memory for these envs live in
+  submit_jobs_triton.py, from local probes (replay memory is allocated in full at
+  start-up, so first-checkpoint RSS of a full-length run = steady state).
+  CORRECTION: macOS RSS badly underestimates that (zero pages are compressed); the
+  wall_large / travel_field DISCOVER jobs were OOM-killed at start-up. Gridworld obs
+  are stored one-hot, so buffer = steps x n_states values (wall_large 7.2 GB/seed for
+  SUN/DISCOVER). Size PER_SEED_MEM_MB from array shapes, not laptop RSS.
+- 2026-10-12 results (explore_hard): small gridworlds solved by all (SUN somewhat
+  earlier/more consistent); TravelField-28x28 (distance-shaped reward) favours DQN,
+  SUN finds high returns early but doesn't hold them (as on CartPole); Wall-50x50: both
+  DQNs 0/5 at 1M steps -> second DQN failure, but SUN/DISCOVER did not finish.
+- Batch 2026-10-23: `wall_500k.yaml` (7 configs, every method at 500k steps,
+  --seeds_per_chunk=1), `mc_ablation.yaml` (5 configs, 10 seeds: random, AdaGoal and
+  SUN's score ablation -- ratio / novelty / reachability, all learning the task Q),
+  `learner_stability.yaml` (16 configs: tau x lr-decay x {SUN, fast-eps DQN} on
+  CartPole and TravelField@500k). SUN_UCB == SUN_Ratio in practice (counts clipped at
+  1e-3 -> both pick the most reachable untried (s, a)); left out.
+  plot_greedy.py does not yet show the ablation actors, AdaGoal, random, or the
+  tau / lr variants -- extend it when the results come in.
+- 2026-10-26 results: Wall-50x50 @500k: DQN (both, also @1M), DISCOVER and SUN p=0 all
+  0; greedy SUN learns the small +0.1 reward in 14/15 seeds and the +1 goal in 5/15
+  (sticky 0.002: 3/5, 2 hold it) -> second DQN-failure task, and here the knob is
+  essential (plain SUN covers 98% but never collects reward). MountainCar ablation (10
+  seeds): novelty-only 1/n = ratio V/n (both 10/10), reachability-only V fails (0/10,
+  coverage below random), AdaGoal -175 (0/10). Learner stability: slower tau / lr
+  decay don't help SUN (CartPole default 315 best); they do help fast-eps DQN (394).
+  Figures: plot_greedy.py --training_steps, new plot_compare.py (ablation, learner).
+- Wall-50x50 layout: start bottom-left (49,0); goal +1 at (49,49) in a pocket closed by
+  a vertical wall (col 39, rows 9-49) and a horizontal wall (row 9, cols 4-39), so
+  the path goes up, across the top, down: ~130 steps. Small +0.1 at (0,49), ~98 steps,
+  next to that path; both terminate. 500-step episodes. Obs are one-hot (2500).
+  Profile: ~80% of a SUN step is the SVF update (obs+goal one-hot = 5000 inputs),
+  ~12% the task Q update; goal selection negligible. Triton SUN ~4.8 steps/s.
+- Batch 2026-10-29 (Wall-50x50, all in data_explore_hard, --seeds_per_chunk=1):
+  `wall_long.yaml` (A: 1M steps, update_frequency=2, sticky 0.001/0.002/0.004 +
+  fast-eps DQN; --timeout_min 2700), `wall_credit.yaml` (B: task-Q sequence_length
+  32, lmbda 0.99, sticky 0.002 + fast-eps DQN), `wall_500k_more.yaml` (C: seeds 5-9
+  of sticky 0.002 @500k, same config_id dcf24627), `wall_1m.yaml` (D: full 1M, sticky
+  0.002, config_id 98601d6c; --timeout_min 4240). submit_jobs_triton.py gained
+  --timeout_min (one limit for every job of a submission).
+- 2026-11-02 results (Wall-50x50, sticky 0.002): 1M steps solves it, 5/5 seeds learn
+  and hold the goal (0.88 +- 0.05; first goal 400-560k); 500k (10 seeds) 0.60, 8/10
+  reach it, all just before the end. The goal appears ~50k steps after SUN's coverage
+  hits 99% (the pocket is the last region covered) -> coverage is the bottleneck, and
+  it tracks gradient UPDATES, not env steps (SVF must learn to navigate):
+  update_frequency 2 delays coverage/goal to ~600-790k / 780-990k, so no saving per
+  unit of compute. seq 32 + lambda 0.99 no help (0.56). p 0.001/0.002/0.004 ~ same.
+  DQN 0 in every variant (coverage 76-86%). Triton hours: A 35, B 41, C 29-34, D 60.
+  Notes: main.tex Wall section rewritten (tab:wall-topline, tab:wall-ablation);
+  figures from `plot_compare.py --figure wall`. plot_greedy.py now skips runs with
+  non-default update_frequency / sequence_length / lmbda unless selected with --where.
+- Batch 2026-11-05: `wall_discover.yaml` (DISCOVER + sticky 0.002, 800k steps, config_id
+  ef1d440e, --timeout_min 4248). DISCOVER ~5% slower than SUN on Triton, so 1M (~65 h)
+  risked the 70.8 h cap. plot_greedy.describe labels DISCOVER without its knob.
+  Also: `wall_800k_plain.yaml` (plain DISCOVER 6f63bd1c, SUN p=0 92bf8761, 800k) and
+  `wall_1m` seeds 5-9 (1M took 59-61 h; some nodes ran 17% slow on the 500k runs ->
+  close to the cap). submit_jobs_triton.py gained --constraint (per-submission node
+  features, replacing SLURM_CONSTRAINT).
+- 2026-11-09 results: CORRECTION -- the knob is NOT essential on Wall-50x50: plain SUN
+  (p=0) at 800k learns the goal 5/5 (0.88; cov99 416-536k, goal median 656k); its 0 at
+  500k was the run ending too early. p=0.002 is faster (cov99 360-450k, goal median
+  475k); 1M now 8 seeds, 0.90 +- 0.04, 8/8 hold (seeds 5, 6 hit the 70.8 h cap on
+  milan4; seeds 7-9 took 65-69 h vs 59-61 h before). DISCOVER never reaches the goal
+  (plain 0; + sticky 0.002: small reward in 3/5, 0.04), coverage 96% at 800k.
+  plot_greedy.describe now skips DISCOVER + knob; plot_compare --figure wall shows it.
 - Next: analyse the pilot (`test` vs greedy value per env and mode), widen to all envs /
   more seeds for the promising modes, then `task_baseline.yaml` for the other methods,
   then other simple modifications (eps floor, score variants, rho), then harder envs.

@@ -1,0 +1,21 @@
+# (1) Wall-50x50, the second task where DQN fails (0 in 5/5 seeds at 1M steps in
+# explore_hard.yaml), but whose SUN/DISCOVER runs did not finish at 1M steps.
+# Here every method trains for 500k steps; DQN is rerun at 500k too so all
+# methods are compared at the same length. Run with --seeds 0-4 --seeds_per_chunk=1
+# (one seed per array element keeps each memory request ~10 GB).
+# 7 configurations.
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 500_000
+
+config_sweep:
+  - algorithm: [eps_greedy, eps_greedy_fast]
+  - algorithm: discover
+    agent.critic.explore_only: False
+  - algorithm: sun_greedy_step
+    agent.actor.greedy.value: 0.0
+  - algorithm: sun_greedy_sticky
+    agent.actor.greedy.value: [0.002, 0.01]
+  - algorithm: sun_greedy_sched
+    agent.actor.greedy.end_value: 1.0
