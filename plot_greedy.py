@@ -140,6 +140,8 @@ def describe(cfg):
 
     g = actor.get("greedy")
     mode = actor.get("greedy_mode", "step")
+    if mode in ("bandit", "reverse_sticky"):
+        return None  # adaptive greediness: shown by plot_compare.py --figure adaptive
     if g is None or (g["id"] == "Constant" and g["value"] == 0):
         return ("SUN (p=0)", None, 0.0, None, "SUN (p=0)")
     if g["id"] == "Constant":

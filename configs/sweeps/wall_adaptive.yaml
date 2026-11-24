@@ -1,0 +1,16 @@
+# greedy_adaptive.yaml on Wall-50x50, at 800k steps like plain SUN / DISCOVER
+# (wall_800k_plain.yaml) and a prefix of the 1M sticky-0.002 headline run.
+# Expect ~55 h; submit with
+#   python submit_jobs_triton.py --sweep=wall_adaptive --data_dir=data_explore_hard \
+#       --seeds 0-4 --seeds_per_chunk=1 --timeout_min 4248
+# Reverse sticky: hazard 0.005 is ~200 greedy steps (enough to reach the small
+# reward, ~98 steps away, and stop there), 0.02 ~50 steps.
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 800_000
+
+config_sweep:
+  - algorithm: sun_greedy_bandit
+  - algorithm: sun_greedy_reverse
+    agent.actor.greedy.value: [0.005, 0.02]

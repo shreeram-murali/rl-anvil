@@ -1,0 +1,12 @@
+# Wall-50x50 at 800k: bandit that explores (p=0) until the episode returns first
+# differ (i.e. until SUN first collects a reward), vs the plain bandit of
+# wall_adaptive.yaml (goal at 576-784k). Expect ~55 h:
+#   python submit_jobs_triton.py --sweep=wall_bandit_explore --data_dir=data_explore_hard \
+#       --seeds 0-4 --seeds_per_chunk=1 --timeout_min 4248
+
+global_sweep:
+  environment: wall_large
+  experiment.training_steps: 800_000
+
+config_sweep:
+  - algorithm: sun_greedy_bandit_explore

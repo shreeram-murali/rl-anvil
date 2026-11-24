@@ -82,6 +82,9 @@ base.TIMEOUTS_ADJUST_ALGO.update({
     "sun_reachability_adaptive": 2.0,
     "sun_ucb_adaptive": 2.0,                  # (not in mc_ablation: identical to the ratio there)
     "adagoal": 2.5,                           # ensemble, like discover
+    "sun_greedy_reverse": 2.0,                # same cost per step as the other sun_greedy_*
+    "sun_greedy_bandit": 2.0,
+    "sun_greedy_bandit_explore": 2.0,
 })
 
 # Per-seed memory (MB) for the same environments = replay memory + ~650 MB of

@@ -1,0 +1,12 @@
+# @package _global_
+# sun_greedy_bandit, but the bandit starts only once two episode returns differ:
+# until then it always picks the smallest hazard (0.0 = pure SUN). The plain bandit
+# picks arms uniformly while every return is equal, which made ~40% of MountainCar's
+# early steps greedy before any reward was found and slowed it down (2026-11-23).
+defaults:
+  - sun_greedy_bandit
+  - _self_
+
+agent:
+  actor:
+    bandit_flat: min

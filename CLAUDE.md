@@ -217,6 +217,30 @@ Work one step at a time; the user decides when to move to the next.
   milan4; seeds 7-9 took 65-69 h vs 59-61 h before). DISCOVER never reaches the goal
   (plain 0; + sticky 0.002: small reward in 3/5, 0.04), coverage 96% at 800k.
   plot_greedy.describe now skips DISCOVER + knob; plot_compare --figure wall shows it.
+- 2026-11-20: offline test of "go greedy when exploration saturates" on plain-SUN logs
+  (`plot_compare.py -f . --figure entropy_rule` -> plots/compare_entropy_rule): rule =
+  growth over W ckpts < r x max growth so far. Cumulative entropy is concave, so the
+  entropy rule fires early everywhere (Wall 200-320k, before coverage completes);
+  the coverage rule times Wall well (360-590k, around goal discovery) but is far too
+  late / never on LunarLander, which wants greed early. No exploration-only signal
+  fits all envs -> task-return signal (bandit). New greedy_mode values in
+  src/actor.py: `reverse_sticky` (greedy first, hazard -> goals) and `bandit`
+  (per-episode SW-UCB over sticky hazards `greedy_arms`, reward = episode return;
+  uniform while all returns are equal). Configs `sun_greedy_reverse`,
+  `sun_greedy_bandit` (timeout factor 2.0 in submit_jobs_triton.py). Sweeps
+  `greedy_adaptive.yaml` (MC/CartPole/LunarLander x {bandit, reverse 0.005/0.02/0.1})
+  and `wall_adaptive.yaml` (800k, bandit + reverse 0.005/0.02, --timeout_min 4248).
+- 2026-11-23 results (greedy_adaptive / wall_adaptive, 5 seeds; `plot_compare.py -f .
+  --figure adaptive`, 3rd column = baselines): bandit matches the tuned setting on
+  LunarLander (203, picks p=1 in 5/5, faster than the schedule) and Wall (0.88, 5/5,
+  goal 576-784k ~ plain SUN), but is slow on MountainCar (-109, 2/5): uniform arms while
+  all returns equal -> ~40% greedy steps before any reward. Reverse sticky's best p
+  flips per env (0.1 MC/CartPole, 0.005 LunarLander) -> dropped. CartPole: all tie.
+  Fix: `bandit_flat: min` (pick the smallest hazard until two episode returns first
+  differ; permanent switch) -> `sun_greedy_bandit_explore` (ids MC 673f4948, CartPole
+  1e65dd41, LL ae5c6075, Wall@800k 8e44af7d); sweeps `greedy_bandit_explore.yaml`,
+  `wall_bandit_explore.yaml`. notes/main.tex section "Choosing the greediness
+  automatically" (tab:adaptive, figures adaptive_greedy.pdf, entropy_rule.pdf).
 - Next: analyse the pilot (`test` vs greedy value per env and mode), widen to all envs /
   more seeds for the promising modes, then `task_baseline.yaml` for the other methods,
   then other simple modifications (eps floor, score variants, rho), then harder envs.

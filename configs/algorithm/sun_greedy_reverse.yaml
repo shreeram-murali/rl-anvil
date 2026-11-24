@@ -1,0 +1,16 @@
+# @package _global_
+# SUN (sun_ratio_adaptive) that also learns the task Q-function, with the sticky
+# order reversed: every episode starts greedy w.r.t. the task Q, and at every
+# greedy step it switches, with probability `greedy.value`, to following SUN's goals
+# for the rest of the episode -- on average after ~1/value steps (Go-Explore-like:
+# first go where the task Q leads, then explore from there).
+defaults:
+  - sun_greedy_sticky
+  - _self_
+
+agent:
+  actor:
+    greedy_mode: reverse_sticky
+    greedy:
+      id: Constant
+      value: 0.02

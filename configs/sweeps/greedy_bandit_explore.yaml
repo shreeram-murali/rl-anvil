@@ -1,0 +1,10 @@
+# Bandit that explores (p=0) until the episode returns first differ, vs the plain
+# bandit of greedy_adaptive.yaml. Expected: MountainCar like plain SUN (no early greedy
+# episodes), LunarLander unchanged (returns differ from the first episodes), CartPole
+# about the same. 3 configurations; run with --seeds 0-4.
+
+global_sweep:
+  environment: [mountain_car, cart_pole, lunar_lander]
+
+config_sweep:
+  - algorithm: sun_greedy_bandit_explore

@@ -1,0 +1,15 @@
+# Can greediness be chosen without per-environment tuning? (2026-11-20)
+#   sun_greedy_bandit:  per-episode sliding-window UCB bandit over sticky hazards
+#                       {0, 0.002, 0.01, 0.05, 1}, rewarded with the episode return
+#   sun_greedy_reverse: greedy first, then SUN's goals (hazard = 1/mean greedy steps)
+# Compare with the best hand-tuned setting per env (sticky 0.002 on MountainCar and
+# CartPole, scheduled p -> 1 by 150k on LunarLander) and plain SUN, all already run.
+# 3 envs x 4 = 12 configurations; run with --seeds 0-4.
+
+global_sweep:
+  environment: [mountain_car, cart_pole, lunar_lander]
+
+config_sweep:
+  - algorithm: sun_greedy_bandit
+  - algorithm: sun_greedy_reverse
+    agent.actor.greedy.value: [0.005, 0.02, 0.1]

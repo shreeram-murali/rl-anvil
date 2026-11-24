@@ -1,4 +1,6 @@
 import warnings
+from collections import deque
+
 import numpy as np
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
@@ -205,8 +207,15 @@ class GoalConditioned(EpsilonGreedy):
       Q-function (needs `explore_only=False` on the critic to mean anything).
       `greedy_mode="step"` decides this independently at every step;
       `greedy_mode="sticky"` makes the first greedy step last for the rest of
-      the episode. A schedule (e.g. LinearDecay) as `greedy` varies the
-      probability over training.
+      the episode. `greedy_mode="reverse_sticky"` is the opposite order: each
+      episode starts greedy, and every greedy step switches to following goals
+      for the rest of the episode with probability `greedy` (Go-Explore-like:
+      first return to what the task Q knows, then explore from there).
+      `greedy_mode="bandit"` picks, at every episode start, a sticky hazard from
+      `greedy_arms` with a sliding-window UCB bandit whose reward is the
+      episode's (undiscounted) return, as Agent57's meta-controller does over
+      its exploration policies. A schedule (e.g. LinearDecay) as `greedy` varies
+      the probability over training.
     """
 
     def __init__(
@@ -218,6 +227,11 @@ class GoalConditioned(EpsilonGreedy):
         goal_value_check: bool,
         greedy: DictConfig = None,
         greedy_mode: str = "step",
+        greedy_arms: list = None,
+        bandit_window: int = 100,
+        bandit_beta: float = 1.0,
+        bandit_eps: float = 0.1,
+        bandit_flat: str = "uniform",
         **kwargs,
     ):
         """
@@ -246,12 +260,41 @@ class GoalConditioned(EpsilonGreedy):
                 (and draws no extra random numbers, so runs are unchanged),
             greedy_mode (str, "step"): "step" draws the greedy decision at every
                 step; "sticky" turns the first greedy step into greedy behavior
-                until the end of the episode, so `greedy` is a per-step hazard.
+                until the end of the episode, so `greedy` is a per-step hazard;
+                "reverse_sticky" starts every episode greedy and leaves greedy
+                behavior for good with per-step hazard `greedy`; "bandit" uses
+                sticky behavior with a hazard chosen per episode from `greedy_arms`
+                (`greedy` is then unused),
+            greedy_arms (list, None): the sticky hazards the "bandit" mode chooses from,
+            bandit_window (int, 100): episodes the bandit remembers (sliding window),
+            bandit_beta (float, 1.0): weight of the UCB bonus; returns are
+                min-max normalized over the window, so the bonus is on [0, 1] scale,
+            bandit_eps (float, 0.1): probability of picking a uniformly random arm,
+            bandit_flat (str, "uniform"): what the bandit does until two episode
+                returns first differ (e.g. while every episode scores 0 in a sparse
+                task): "uniform" picks arms uniformly (the UCB on constant returns);
+                "min" always picks the smallest hazard (pure SUN for arm 0.0) and
+                starts the bandit only once the returns carry information.
         """
 
-        assert greedy_mode in ("step", "sticky"), f"unknown greedy_mode '{greedy_mode}'"
+        assert greedy_mode in ("step", "sticky", "reverse_sticky", "bandit"), \
+            f"unknown greedy_mode '{greedy_mode}'"
+        assert greedy_mode != "bandit" or greedy_arms, "greedy_mode 'bandit' needs greedy_arms"
+        assert bandit_flat in ("uniform", "min"), f"unknown bandit_flat '{bandit_flat}'"
+        assert greedy_mode not in ("reverse_sticky",) or greedy is not None, \
+            f"greedy_mode '{greedy_mode}' needs greedy"
         self._greedy = None if greedy is None else getattr(src.parameter, greedy.id)(**greedy)
         self._greedy_mode = greedy_mode
+        self._greedy_on = greedy is not None or greedy_mode == "bandit"
+        self._greedy_arms = None if greedy_arms is None else [float(a) for a in greedy_arms]
+        self._bandit_window = bandit_window
+        self._bandit_beta = bandit_beta
+        self._bandit_eps = bandit_eps
+        self._bandit_history = deque(maxlen=bandit_window)  # (arm, episode return)
+        self._bandit_arm = None
+        self._bandit_flat = bandit_flat
+        self._bandit_informed = False  # have two episode returns differed yet?
+        self._episode_return = 0.0
         self.batch_size_goal = batch_size_goal
         self._random_tail = random_tail
         self._per_step_selection = per_step_selection
@@ -283,6 +326,11 @@ class GoalConditioned(EpsilonGreedy):
         self._greedy_mode = source._greedy_mode
         self._greedy_exploitation = source._greedy_exploitation
         self._greedy_steps = source._greedy_steps
+        self._bandit_history = deque(source._bandit_history, maxlen=source._bandit_window)
+        self._bandit_arm = source._bandit_arm
+        self._bandit_flat = source._bandit_flat
+        self._bandit_informed = source._bandit_informed
+        self._episode_return = source._episode_return
         self.goal = None if source.goal is None else source.goal.copy()
         self._goal_used_last_step = None
         if source.goal_selected_count is not None:
@@ -298,15 +346,56 @@ class GoalConditioned(EpsilonGreedy):
             "goal_selection_rate": np.nan if self._policy_steps == 0 else self._goal_selections / self._policy_steps,
             "avg_steps_to_goal": np.nan if self._goal_reached == 0 else self._steps_to_goal_sum / self._goal_reached,
             "random_tail_steps_%": np.nan if (self.t - self._policy_steps) == 0 else self._random_tail_steps / (self.t - self._policy_steps),
-        } | ({} if self._greedy is None else {
-            "greedy": self._greedy.value,
+        } | ({} if not self._greedy_on else {
+            "greedy": self._greedy_value() if self._greedy_mode != "bandit" else (
+                # mean hazard over the episodes in the bandit's window
+                np.nan if not self._bandit_history else
+                float(np.mean([self._greedy_arms[a] for a, _ in self._bandit_history]))),
             "greedy_steps_%": np.nan if self.t == 0 else self._greedy_steps / self.t,
+        }) | ({} if self._greedy_mode != "bandit" else {
+            # hazard the bandit picked most often over its window
+            "greedy_arm": np.nan if not self._bandit_history else self._greedy_arms[
+                int(np.bincount([a for a, _ in self._bandit_history],
+                                minlength=len(self._greedy_arms)).argmax())],
         })
 
-    def post_step(self, *args, **kwargs):
-        super().post_step(*args, **kwargs)
+    def post_step(self, *args, rwd=0.0, term=False, trunc=False, **kwargs):
+        super().post_step(*args, rwd=rwd, term=term, trunc=trunc, **kwargs)
         if self._greedy is not None:
             self._greedy.step()
+        if self._greedy_mode == "bandit":
+            self._episode_return += float(rwd)
+            if term or trunc:
+                self._bandit_history.append((self._bandit_arm, self._episode_return))
+                self._episode_return = 0.0
+
+    def _greedy_value(self):
+        """Probability (hazard, for the sticky modes) of the greedy decision this step."""
+        if self._greedy_mode == "bandit":
+            return self._greedy_arms[self._bandit_arm]
+        return self._greedy.value
+
+    def _bandit_pick(self, rng_generator):
+        """Sliding-window UCB over greedy_arms, with returns min-max normalized
+        over the window and a uniformly random arm with probability bandit_eps."""
+        k = len(self._greedy_arms)
+        counts = np.zeros(k)
+        sums = np.zeros(k)
+        returns = np.array([r for _, r in self._bandit_history])
+        span = returns.max() - returns.min() if len(returns) else 0.0
+        self._bandit_informed = self._bandit_informed or span > 0
+        if self._bandit_flat == "min" and not self._bandit_informed:
+            return int(np.argmin(self._greedy_arms))  # no reward signal yet: explore
+        for a, r in self._bandit_history:
+            counts[a] += 1
+            sums[a] += 0.0 if span == 0 else (r - returns.min()) / span
+        untried = np.flatnonzero(counts == 0)
+        if len(untried):
+            return int(rng_generator.choice(untried))
+        if rng_generator.random() < self._bandit_eps:
+            return int(rng_generator.integers(k))
+        ucb = sums / counts + self._bandit_beta * np.sqrt(np.log(counts.sum()) / counts)
+        return int(random_argmax(ucb, rng_generator, axis=-1))
 
     def reset_goal(self):
         self.goal = None
@@ -316,7 +405,10 @@ class GoalConditioned(EpsilonGreedy):
     def reset_episode(self, seed=None, rng_generator=None, *args, **kwargs):
         self.reset_goal()
         self._random_exploration = False
-        self._greedy_exploitation = False
+        self._greedy_exploitation = self._greedy_mode == "reverse_sticky"
+        if self._greedy_mode == "bandit":
+            self._episode_return = 0.0
+            self._bandit_arm = self._bandit_pick(rng_generator)
         self._pick_episode_critic(rng_generator)
 
     @property
@@ -364,6 +456,10 @@ class GoalConditioned(EpsilonGreedy):
         self._greedy_steps = 0
         if self._greedy is not None:
             self._greedy.reset()
+        self._bandit_history.clear()
+        self._bandit_arm = None
+        self._bandit_informed = False
+        self._episode_return = 0.0
         self._steps_to_goal_current = 0
         self._steps_to_goal_sum = 0
         if self.goal_selected_count is not None:
@@ -453,12 +549,19 @@ class GoalConditioned(EpsilonGreedy):
             self._goal_used_last_step = self.goal
             return rng_generator.integers(self._critic.n_actions)
 
-        if self._greedy_exploitation or (
-            self._greedy is not None and rng_generator.random() < self._greedy.value
-        ):
+        if self._greedy_mode == "reverse_sticky":
+            # Greedy from the episode start until the hazard fires, then goals for good
+            if self._greedy_exploitation and rng_generator.random() < self._greedy_value():
+                self._greedy_exploitation = False
+            act_greedy = self._greedy_exploitation
+        else:
+            act_greedy = self._greedy_exploitation or (
+                self._greedy_on and rng_generator.random() < self._greedy_value()
+            )
+        if act_greedy:
             # Same as the test policy. Like a random step, the action is not
             # driven by the goal, which is kept (and not value-checked next step).
-            if self._greedy_mode == "sticky":
+            if self._greedy_mode in ("sticky", "bandit"):
                 self._greedy_exploitation = True
             self._greedy_steps += 1
             self._previous_was_random = True

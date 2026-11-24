@@ -1,0 +1,18 @@
+# @package _global_
+# SUN (sun_ratio_adaptive) that also learns the task Q-function, with the
+# greediness chosen per episode: at every episode start a sliding-window UCB
+# bandit picks a sticky hazard from `greedy_arms`, rewarded with the episode's
+# return (like Agent57's meta-controller). Removes the per-environment tuning of p.
+defaults:
+  - sun_ratio_adaptive
+  - _self_
+
+agent:
+  critic:
+    explore_only: False
+  actor:
+    greedy_mode: bandit
+    greedy_arms: [0.0, 0.002, 0.01, 0.05, 1.0]
+    bandit_window: 100
+    bandit_beta: 1.0
+    bandit_eps: 0.1
